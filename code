@@ -1,0 +1,91 @@
+# Import necessary libraries
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from imblearn.over_sampling import SMOTE, ADASYN
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+
+# Load the dataset
+data = pd.read_csv('creditcard.csv')  # Ensure you have the dataset in the same directory
+
+# Preprocess the data
+X = data.drop('Class', axis=1)  # Features
+y = data['Class']  # Target variable
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Define a feature engineering pipeline
+def feature_engineering_pipeline():
+    # Define the preprocessing for numerical features
+    numeric_features = X.columns.tolist()  # Assuming all features are numeric
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='mean')),  # Handle missing values
+        ('scaler', StandardScaler())  # Standardize features
+    ])
+    
+    # Combine preprocessing steps
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numeric_transformer, numeric_features)
+        ]
+    )
+    
+    # Create a full pipeline with feature engineering
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('feature_engineering', 'passthrough')  # Placeholder for additional feature engineering steps
+    ])
+    
+    return pipeline
+
+# Initialize the feature engineering pipeline
+pipeline = feature_engineering_pipeline()
+
+# Apply the pipeline to the training and test data
+X_train_transformed = pipeline.fit_transform(X_train)
+X_test_transformed = pipeline.transform(X_test)
+
+# Handle class imbalance using SMOTE
+smote = SMOTE(random_state=42)
+X_train_smote, y_train_smote = smote.fit_resample(X_train_transformed, y_train)
+
+# Handle class imbalance using ADASYN
+adasyn = ADASYN(random_state=42)
+X_train_adasyn, y_train_adasyn = adasyn.fit_resample(X_train_transformed, y_train)
+
+# Define the model
+model = RandomForestClassifier(random_state=42)
+
+# Set up the parameter grid for hyperparameter tuning
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [None, 10, 20],
+    'min_samples_split': [2, 5],
+}
+
+# Perform grid search cross-validation on SMOTE data
+grid_search_smote = GridSearchCV(model, param_grid, cv=5, scoring='f1')
+grid_search_smote.fit(X_train_smote, y_train_smote)
+
+# Perform grid search cross-validation on ADASYN data
+grid_search_adasyn = GridSearchCV(model, param_grid, cv=5, scoring='f1')
+grid_search_adasyn.fit(X_train_adasyn, y_train_adasyn)
+
+# Evaluate the best model from SMOTE
+best_model_smote = grid_search_smote.best_estimator_
+y_pred_smote = best_model_smote.predict(X_test_transformed)
+print("SMOTE Model Evaluation:")
+print(confusion_matrix(y_test, y_pred_smote))
+print(classification_report(y_test, y_pred_smote))
+
+# Evaluate the best model from ADASYN
+best_model_adasyn = grid_search_adasyn.best_estimator_
+y_pred_adasyn = best_model_adasyn.predict(X_test_transformed)
+print("\nADASYN Model Evaluation:")
+print(confusion_matrix(y_test, y_pred_adasyn))
+print(classification_report(y_test, y_pred_adasyn))
